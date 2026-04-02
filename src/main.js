@@ -1,108 +1,211 @@
 import './style.css'
-import data from './data/dataset.json'
-import { renderOverview }   from './tabs/overview.js'
-import { renderEnergy }     from './tabs/energy.js'
-import { renderAppliances } from './tabs/appliances.js'
-import { renderNetwork }    from './tabs/network.js'
-import { renderData }       from './tabs/dataTable.js'
-import { renderReport }     from './tabs/report.js'
+import rawData from './data/dataset.json'
+import { renderAnalytics } from './tabs/analytics.js'
+import { renderDataExplorer } from './tabs/explorer.js'
+import { renderReport } from './tabs/report.js'
 
-const today = new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })
-
-document.querySelector('#app').innerHTML = `
-  <!-- Loading Overlay -->
-  <div id="loading-overlay">
-    <div class="loading-logo">
-      <div class="loading-logo-icon">🏠</div>
-      <div class="loading-logo-text">IoT Analytics</div>
-    </div>
-    <div style="text-align:center;display:flex;flex-direction:column;gap:8px;align-items:center">
-      <div class="loading-bar-wrap"><div class="loading-bar"></div></div>
-      <div class="loading-text">Loading ${data.summary.totalRecords.toLocaleString()} records…</div>
-    </div>
-  </div>
-
-  <!-- Header -->
-  <header class="dashboard-header">
-    <div class="header-left">
-      <div class="logo-icon">🏠</div>
-      <div>
-        <div class="header-title">SmartHome IoT Analytics</div>
-        <div class="header-subtitle">Energy &amp; Network Dashboard</div>
-      </div>
-      <div class="header-divider"></div>
-      <div class="header-meta">
-        <div class="header-meta-dot"></div>
-        <span>${today} &nbsp;·&nbsp; ${data.summary.totalRecords.toLocaleString()} records &nbsp;·&nbsp; Practical Assignment-3</span>
-      </div>
-    </div>
-    <div class="header-right">
-      <div class="live-badge">
-        <div class="live-dot"></div>
-        Live Analysis
-      </div>
-      <button class="btn-export" id="btn-quick-pdf">
-        ↓ Export PDF
-      </button>
-    </div>
-  </header>
-
-  <!-- Nav Tabs -->
-  <nav class="nav-tabs">
-    <button class="nav-tab active" data-tab="overview">📊 Overview</button>
-    <button class="nav-tab" data-tab="energy">⚡ Energy Analysis</button>
-    <button class="nav-tab" data-tab="appliances">🏠 Appliances</button>
-    <button class="nav-tab" data-tab="network">🌐 Network &amp; Offloading</button>
-    <button class="nav-tab" data-tab="data">🗄 Raw Data</button>
-    <button class="nav-tab" data-tab="report">📄 Report</button>
-  </nav>
-
-  <!-- Main -->
-  <main class="main-content">
-    <div id="tab-overview"   class="tab-panel active"></div>
-    <div id="tab-energy"     class="tab-panel"></div>
-    <div id="tab-appliances" class="tab-panel"></div>
-    <div id="tab-network"    class="tab-panel"></div>
-    <div id="tab-data"       class="tab-panel"></div>
-    <div id="tab-report"     class="tab-panel"></div>
-  </main>
-`
-
-// ===== TAB SWITCHING =====
-const tabs    = document.querySelectorAll('.nav-tab')
-const panels  = document.querySelectorAll('.tab-panel')
-const rendered = new Set()
-
-function activateTab(name) {
-  tabs.forEach(t   => t.classList.toggle('active', t.dataset.tab === name))
-  panels.forEach(p => {
-    const on = p.id === `tab-${name}`
-    p.classList.toggle('active', on)
-    if (on) p.classList.add('fade-in')
-  })
-  if (!rendered.has(name)) {
-    rendered.add(name)
-    const el = document.getElementById(`tab-${name}`)
-    if (name === 'energy')     renderEnergy(el, data)
-    if (name === 'appliances') renderAppliances(el, data)
-    if (name === 'network')    renderNetwork(el, data)
-    if (name === 'data')       renderData(el, data)
-    if (name === 'report')     renderReport(el, data)
+/* ═══════════════════════════════════════════
+   GLOBAL FILTER STATE  (reactive store)
+═══════════════════════════════════════════ */
+export const store = {
+  offload: 'all',        // 'all' | '0' | '1'
+  appliance: 'all',      // 'all' | 'tv' | 'dryer' | 'oven' | 'fridge' | 'micro'
+  energyMin: 10,         // number
+  energyMax: 100,
+  listeners: [],
+  subscribe(fn) { this.listeners.push(fn) },
+  notify()      { this.listeners.forEach(fn => fn(this.filtered())) },
+  filtered() {
+    return rawData.sample.filter(r => {
+      if (this.offload !== 'all' && r.offload !== +this.offload) return false
+      if (this.appliance !== 'all' && !r[this.appliance]) return false
+      if (r.energy < this.energyMin || r.energy > this.energyMax) return false
+      return true
+    })
   }
 }
 
-tabs.forEach(t => t.addEventListener('click', () => activateTab(t.dataset.tab)))
+export const summary = rawData.summary
 
-// ===== BOOT =====
-setTimeout(() => {
-  const ov = document.getElementById('loading-overlay')
-  ov.style.opacity = '0'
-  setTimeout(() => ov.remove(), 400)
-  rendered.add('overview')
-  renderOverview(document.getElementById('tab-overview'), data)
+const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 
-  document.getElementById('btn-quick-pdf').addEventListener('click', () => {
-    activateTab('report')
-    setTimeout(() => document.getElementById('btn-generate-pdf')?.click(), 300)
+/* ═══════════════════════════════════════════
+   APP SHELL
+═══════════════════════════════════════════ */
+document.querySelector('#app').innerHTML = `
+  <!-- Loader -->
+  <div id="loader">
+    <div class="loader-logo">
+      <div class="loader-icon">🏠</div>
+      <div class="loader-name">IoT Analytics</div>
+    </div>
+    <div class="loader-track"><div class="loader-fill"></div></div>
+    <div class="loader-text">Loading ${rawData.summary.totalRecords.toLocaleString()} records…</div>
+  </div>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="h-logo">🏠</div>
+      <div>
+        <div class="h-title">SmartHome IoT Analytics</div>
+        <div class="h-sub">Energy · Appliances · Network</div>
+      </div>
+      <div class="h-divider"></div>
+      <div class="h-meta">
+        <div class="h-dot"></div>
+        <span>${today} · ${rawData.summary.totalRecords.toLocaleString()} records · Assignment-3</span>
+      </div>
+      <div class="h-spacer"></div>
+      <button class="h-btn h-btn-outline" id="btn-reset-all">↺ Reset Filters</button>
+      <button class="h-btn h-btn-solid" id="btn-pdf">↓ Export PDF</button>
+    </div>
+  </header>
+
+  <!-- Global Filter Bar -->
+  <div class="gfb">
+    <span class="gfb-label">Filters</span>
+    <div class="gfb-controls">
+
+      <!-- Offload pills -->
+      <button class="gfb-pill active" data-filter="offload" data-val="all">All Transactions</button>
+      <button class="gfb-pill" data-filter="offload" data-val="1">☁ Cloud Offload</button>
+      <button class="gfb-pill" data-filter="offload" data-val="0">🖥 Local Process</button>
+
+      <div class="gfb-sep"></div>
+
+      <!-- Appliance select -->
+      <select class="gfb-select" id="gf-appliance">
+        <option value="all">All Appliances</option>
+        <option value="tv">📺 TV Active</option>
+        <option value="dryer">🌀 Dryer Active</option>
+        <option value="oven">🍳 Oven Active</option>
+        <option value="fridge">❄️ Fridge Active</option>
+        <option value="micro">📡 Microwave Active</option>
+      </select>
+
+      <div class="gfb-sep"></div>
+
+      <!-- Energy range -->
+      <span style="font-size:11px;font-weight:600;color:var(--muted)">Energy</span>
+      <input type="range" class="gfb-range" id="gf-energy-min" min="10" max="100" step="5" value="10">
+      <span class="gfb-range-val" id="gf-energy-min-val">10</span>
+      <span style="font-size:11px;color:var(--faint)">–</span>
+      <input type="range" class="gfb-range" id="gf-energy-max" min="10" max="100" step="5" value="100">
+      <span class="gfb-range-val" id="gf-energy-max-val">100</span>
+      <span style="font-size:10px;color:var(--faint)">kWh</span>
+
+    </div>
+    <span class="gfb-count" id="gf-count">Showing <span>${rawData.sample.length.toLocaleString()}</span> records</span>
+    <button class="gfb-reset" id="gf-reset-btn">Reset</button>
+  </div>
+
+  <!-- Nav -->
+  <nav class="nav">
+    <button class="nav-tab active" data-tab="analytics">📊 Analytics</button>
+    <button class="nav-tab" data-tab="explorer">🗄 Data Explorer</button>
+    <button class="nav-tab" data-tab="report">📄 Report</button>
+  </nav>
+
+  <!-- Panels -->
+  <main class="main">
+    <div id="tab-analytics" class="tab-panel active"></div>
+    <div id="tab-explorer"  class="tab-panel"></div>
+    <div id="tab-report"    class="tab-panel"></div>
+  </main>
+`
+
+/* ═══════════════════════════════════════════
+   GLOBAL FILTER WIRING
+═══════════════════════════════════════════ */
+function updateCount(filtered) {
+  const el = document.querySelector('#gf-count span')
+  if (el) el.textContent = filtered.length.toLocaleString()
+}
+
+// Offload pills
+document.querySelectorAll('[data-filter="offload"]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-filter="offload"]').forEach(b => b.classList.remove('active'))
+    btn.classList.add('active')
+    store.offload = btn.dataset.val
+    store.notify()
+    updateCount(store.filtered())
   })
-}, 1800)
+})
+
+// Appliance select
+document.getElementById('gf-appliance').addEventListener('change', function () {
+  store.appliance = this.value
+  store.notify()
+  updateCount(store.filtered())
+})
+
+// Energy sliders
+document.getElementById('gf-energy-min').addEventListener('input', function () {
+  const v = +this.value
+  if (v > store.energyMax - 5) { this.value = store.energyMax - 5; return }
+  store.energyMin = v
+  document.getElementById('gf-energy-min-val').textContent = v
+  store.notify()
+  updateCount(store.filtered())
+})
+document.getElementById('gf-energy-max').addEventListener('input', function () {
+  const v = +this.value
+  if (v < store.energyMin + 5) { this.value = store.energyMin + 5; return }
+  store.energyMax = v
+  document.getElementById('gf-energy-max-val').textContent = v
+  store.notify()
+  updateCount(store.filtered())
+})
+
+function resetAllFilters() {
+  store.offload = 'all'; store.appliance = 'all'
+  store.energyMin = 10; store.energyMax = 100
+  document.querySelectorAll('[data-filter="offload"]').forEach(b => b.classList.toggle('active', b.dataset.val === 'all'))
+  document.getElementById('gf-appliance').value = 'all'
+  document.getElementById('gf-energy-min').value = 10
+  document.getElementById('gf-energy-max').value = 100
+  document.getElementById('gf-energy-min-val').textContent = 10
+  document.getElementById('gf-energy-max-val').textContent = 100
+  store.notify()
+  updateCount(store.filtered())
+}
+
+document.getElementById('gf-reset-btn').addEventListener('click', resetAllFilters)
+document.getElementById('btn-reset-all').addEventListener('click', resetAllFilters)
+
+/* ═══════════════════════════════════════════
+   TAB SWITCHING
+═══════════════════════════════════════════ */
+const rendered = new Set()
+
+function switchTab(name) {
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name))
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${name}`))
+
+  if (!rendered.has(name)) {
+    rendered.add(name)
+    const panel = document.getElementById(`tab-${name}`)
+    if (name === 'analytics') renderAnalytics(panel, store)
+    if (name === 'explorer')  renderDataExplorer(panel, store)
+    if (name === 'report')    renderReport(panel, store, summary)
+  }
+}
+
+document.querySelectorAll('.nav-tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)))
+
+// PDF shortcut
+document.getElementById('btn-pdf').addEventListener('click', () => {
+  switchTab('report')
+  setTimeout(() => document.getElementById('btn-gen-pdf')?.click(), 300)
+})
+
+/* ═══════════════════════════════════════════
+   BOOT
+═══════════════════════════════════════════ */
+setTimeout(() => {
+  document.getElementById('loader').classList.add('hidden')
+  rendered.add('analytics')
+  renderAnalytics(document.getElementById('tab-analytics'), store)
+}, 1500)
