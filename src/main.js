@@ -54,7 +54,7 @@ document.querySelector('#app').innerHTML = `
       <div class="h-divider"></div>
       <div class="h-meta">
         <div class="h-dot"></div>
-        <span>${today} · ${rawData.summary.totalRecords.toLocaleString()} records · Assignment-3</span>
+        <span>${today} · ${rawData.summary.totalRecords.toLocaleString()} records · Assignment-3 👤Harshini-202401040151  👤Parth-202401040210</span>
       </div>
       <div class="h-spacer"></div>
       <button class="h-btn h-btn-outline" id="btn-reset-all">↺ Reset Filters</button>
